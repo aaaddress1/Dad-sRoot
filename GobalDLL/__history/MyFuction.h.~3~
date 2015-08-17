@@ -1,0 +1,140 @@
+﻿#pragma hdrstop
+#include <windows.h>
+#include <vcl.h>
+#include <mmsystem.h>
+#include <tlhelp32.h>
+#define JMP(from, to) (int)(((int)to - (int)from) - 5);
+
+HMODULE GetRemoteModuleHandle(unsigned long pId, char *module)
+{
+MODULEENTRY32 modEntry;
+HANDLE tlh = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, pId);
+
+modEntry.dwSize = sizeof(MODULEENTRY32);
+Module32First(tlh, &modEntry);
+
+do
+{
+AnsiString n = modEntry.szModule;
+
+if(!stricmp(n.c_str() , module))
+return modEntry.hModule;
+modEntry.dwSize = sizeof(MODULEENTRY32);
+}
+while(Module32Next(tlh, &modEntry));
+
+return NULL;
+}         /*void* hd=OpenProcess(PROCESS_ALL_ACCESS,false,Pid);  */
+
+
+bool InjectDll(String Path,void* hd){
+
+if(NULL==hd){ShowMessage("-1");return 0;}
+char *lpszDll=AnsiString(Path).c_str() ;
+DWORD dwSize, dwWritten;
+dwSize = lstrlenA( lpszDll ) + 1;
+LPVOID lpBuf = VirtualAllocEx( hd, NULL, dwSize, MEM_COMMIT, PAGE_READWRITE );
+if ( NULL == lpBuf ){CloseHandle( hd );ShowMessage("1");return 0;}
+if ( WriteProcessMemory( hd, lpBuf, (LPVOID)lpszDll, dwSize, &dwWritten ) )
+{
+if ( dwWritten != dwSize ){
+VirtualFreeEx( hd, lpBuf, dwSize, MEM_DECOMMIT );
+CloseHandle( hd );ShowMessage("2");return 0;
+}
+}
+else{CloseHandle( hd );return 0;}
+PTHREAD_START_ROUTINE pfnStartAddr = (PTHREAD_START_ROUTINE)GetProcAddress(GetModuleHandle(TEXT("Kernel32")), "LoadLibraryA");
+HANDLE hThread=CreateRemoteThread( hd, NULL, 0, pfnStartAddr, lpBuf, 0, NULL);
+if(NULL==hThread){CloseHandle( hd );ShowMessage("3");return 0;}
+WaitForSingleObject( hThread, INFINITE );
+VirtualFreeEx( hd, lpBuf, dwSize, MEM_DECOMMIT );
+CloseHandle( hThread );
+return true ;
+}
+
+
+
+long InjectThreadDLL(DWORD PID,String Path){
+void* hd ;
+
+char *DllName;
+
+hd = OpenProcess(PROCESS_ALL_ACCESS,false,PID);
+
+DllName = AnsiString(Path).c_str() ;
+int len = strlen(DllName) + 1;
+PVOID param = VirtualAllocEx(hd, NULL, len,MEM_COMMIT | MEM_TOP_DOWN,PAGE_READWRITE);
+if (param == NULL) return false;
+WriteProcessMemory(hd, param,(LPVOID)DllName, len, 0);
+HANDLE hThreadSnap = NULL;
+THREADENTRY32 te32 = {0};
+hThreadSnap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+if (hThreadSnap == INVALID_HANDLE_VALUE)return (FALSE);
+te32.dwSize = sizeof(THREADENTRY32);
+
+if (Thread32First(hThreadSnap, &te32))
+{
+do
+{
+if (te32.th32OwnerProcessID == PID)
+{
+HMODULE Kernel32ADR = GetRemoteModuleHandle(PID,AnsiString("Kernel32.dll").c_str());
+
+if (Kernel32ADR != NULL) {
+FARPROC LoadLibraryADR = GetProcAddress(Kernel32ADR, "LoadLibraryA");
+HANDLE hThread = OpenThread(THREAD_ALL_ACCESS, 0, te32.th32ThreadID);
+if (hThread != 0)
+{
+QueueUserAPC((PAPCFUNC)LoadLibraryADR,hThread,(DWORD)param);
+CloseHandle(hThread);
+}
+}
+}
+}
+while (Thread32Next(hThreadSnap, &te32));
+return ((long)hd);
+
+}else{
+CloseHandle (hThreadSnap);
+return false;
+}
+}
+
+
+String GetMyPath(HINSTANCE DllHinstDLL) {
+String PathStr;	try {wchar_t chModuleDir[260*2] ;GetModuleFileNameW(DllHinstDLL, chModuleDir, 260*2);
+PathStr = (chModuleDir);return PathStr;}
+catch(...) {}return ExtractFilePath(Application->ExeName);
+}
+
+void AsmJump(const DWORD lpAddress, LPCVOID Function, unsigned Nops){
+	DWORD OldProtection;
+	VirtualProtect((LPVOID)lpAddress,10,PAGE_EXECUTE_READWRITE, &OldProtection);
+	*(LPBYTE)lpAddress = 0xE9;
+	*(LPDWORD)(lpAddress + 1) = (DWORD)Function - (DWORD)lpAddress - 5;
+	if ((bool)Nops)
+		memset(((LPBYTE)lpAddress + 5), 0x90, Nops);
+	VirtualProtect((LPVOID)lpAddress,10,OldProtection, &OldProtection);
+}
+
+void AsmCall(const DWORD lpAddress, LPCVOID Function, unsigned Nops){
+	DWORD OldProtection;
+	VirtualProtect((LPVOID)lpAddress,10,PAGE_EXECUTE_READWRITE, &OldProtection);
+	*(LPBYTE)lpAddress = 0xE8;
+	*(LPDWORD)(lpAddress + 1) = (DWORD)Function - (DWORD)lpAddress - 5;
+	if ((bool)Nops)
+		memset(((LPBYTE)lpAddress + 5), 0x90, Nops);
+	VirtualProtect((LPVOID)lpAddress,10,OldProtection, &OldProtection);
+}
+void MEMwrite(PVOID address, void* val, int bytes){
+	DWORD d, ds;
+	VirtualProtect(address, bytes, PAGE_EXECUTE_READWRITE, &d);
+	memcpy(address, val, bytes);
+	VirtualProtect(address,bytes,d,&ds);
+ }
+     void WriteValue(long adr,int value){
+	DWORD OldProtection;
+	VirtualProtect((LPVOID)adr,0x4,PAGE_EXECUTE_READWRITE, &OldProtection);
+	*(int*)(adr)=value;
+	VirtualProtect((LPVOID)adr,0x4,OldProtection, &OldProtection);
+}

